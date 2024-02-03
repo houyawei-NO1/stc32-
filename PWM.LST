@@ -1,0 +1,596 @@
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 1   
+
+
+C251 COMPILER V5.60.0, COMPILATION OF MODULE PWM
+OBJECT MODULE PLACED IN PWM.OBJ
+COMPILER INVOKED BY: D:\Keil_v5\C251\BIN\C251.EXE PWM.c XSMALL BROWSE DEBUG
+
+stmt  level    source
+
+    1          #include "./comm/STC32G.h"  //包含此头文件后，不需要再包含"reg51.h"头文件
+    2          #include "./comm/usb.h"     //USB调试及复位所需头文件
+    3          #include "intrins.h"
+    4          #include "stdio.h"
+    5          
+    6          
+    7          /****************************** 用户定义宏 ***********************************/
+    8          
+    9          #define MAIN_Fosc       12000000L   //定义主时钟
+   10          #define Timer0_Reload   (65536UL -(MAIN_Fosc / 1000))       //Timer 0 中断频率, 3333次/秒 1S/3333=300us  
+             -, 1000  1ms
+   11          
+   12          /*****************************************************************************/
+   13          #define PWM1_1      0x00        //P:P1.0  N:P1.1
+   14          #define PWM1_2      0x01        //P:P2.0  N:P2.1
+   15          #define PWM1_3      0x02        //P:P6.0  N:P6.1
+   16          
+   17          #define PWM2_1      0x00        //P:P1.2/P5.4  N:P1.3
+   18          #define PWM2_2      0x04        //P:P2.2  N:P2.3
+   19          #define PWM2_3      0x08        //P:P6.2  N:P6.3
+   20          
+   21          #define PWM3_1      0x00        //P:P1.4  N:P1.5
+   22          #define PWM3_2      0x10        //P:P2.4  N:P2.5
+   23          #define PWM3_3      0x20        //P:P6.4  N:P6.5
+   24          
+   25          #define PWM4_1      0x00        //P:P1.6  N:P1.7
+   26          #define PWM4_2      0x40        //P:P2.6  N:P2.7
+   27          #define PWM4_3      0x80        //P:P6.6  N:P6.7
+   28          #define PWM4_4      0xC0        //P:P3.4  N:P3.3
+   29          
+   30          #define ENO1P       0x01
+   31          #define ENO1N       0x02
+   32          #define ENO2P       0x04
+   33          #define ENO2N       0x08
+   34          #define ENO3P       0x10
+   35          #define ENO3N       0x20
+   36          #define ENO4P       0x40
+   37          #define ENO4N       0x80
+   38          
+   39          #define PWM5_1      0x00        //P2.0
+   40          #define PWM5_2      0x01        //P1.7
+   41          #define PWM5_3      0x02        //P0.0
+   42          #define PWM5_4      0x03        //P7.4
+   43          
+   44          #define PWM6_1      0x00        //P2.1
+   45          #define PWM6_2      0x04        //P5.4
+   46          #define PWM6_3      0x08        //P0.1
+   47          #define PWM6_4      0x0C        //P7.5
+   48          
+   49          #define PWM7_1      0x00        //P2.2
+   50          #define PWM7_2      0x10        //P3.3
+   51          #define PWM7_3      0x20        //P0.2
+   52          #define PWM7_4      0x30        //P7.6
+   53          
+   54          #define PWM8_1      0x00        //P2.3
+   55          #define PWM8_2      0x40        //P3.4
+   56          #define PWM8_3      0x80        //P0.3
+   57          #define PWM8_4      0xC0        //P7.7
+   58          
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 2   
+
+   59          #define ENO5P       0x01
+   60          #define ENO6P       0x04
+   61          #define ENO7P       0x10
+   62          #define ENO8P       0x40
+   63          
+   64          
+   65          sbit fule_m2 = P6^1;                    
+   66          sbit fule_m3 = P6^3;
+   67          sbit zs_m2=P6^5;
+   68          sbit zs_m3=P6^7;
+   69          sbit water_m2=P4^4;
+   70          sbit water_m3=P4^3;
+   71          
+   72          sbit    LCD_B7  = P2^7;
+   73          
+   74          
+   75          #define DB07  P2
+   76          
+   77          sbit RS=P7^6;
+   78          sbit RW=P7^5;
+   79          sbit E=P7^4;
+   80          
+   81          /*************  本地常量声明    **************/
+   82          u8  SPN[8]={
+   83                  0x53,0x50,0x4e,0x31,0x32,0x33,0x34,0x35};
+   84          u8  FMI[8]={
+   85                  0x46,0x4D,0x49,0x20,0x20,0x36,0x37,0x38};
+   86          u8  hour[8]={
+   87                  0x20,0x20,0x20,0x20,0x38,0x2e,0x39,0x68};
+   88          u8  power[8]={
+   89                  0x20,0x20,0x20,0x31,0x32,0x2e,0x33,0x76};
+   90          u8 code border_inf[16] = {
+   91            0xaa,0x55,0xaa,0x55,0xaa,0x55,0xaa,0x55,
+   92            0x55,0xaa,0x55,0xaa,0x55,0xaa,0x55,0xaa
+   93            };
+   94          
+   95          u8 code string[]={
+   96                  0x31,0x31,0x31,0x31,0x31,0x31,0x31,0x35,0x32,0x32,0x32,0x32,0x32,0x32,0x32,0x32,
+   97                  0x33,0x33,0x33,0x33,0x33,0x33,0x33,0x33,0x34,0x34,0x34,0x34,0x34,0x34,0x34,0x34,
+   98                  0xd5,0xd6,0xe3,0xe4,0xe5,0xf3,0xf4,0xf5
+   99          };
+  100          
+  101          u8 count=0;
+  102          u8 cnt=0;
+  103          u8 a=0;
+  104          
+  105          
+  106          
+  107          
+  108          u16 motor_pwm1[48] = {354,374,394,400,410,400,394,374,
+  109                                          354,286,220,184,148,112,82,36,
+  110                                          512,476,430,400,364,328,292,226,
+  111                                          158,138,118,112,102,112,118,138,
+  112                                          158,226,292,328,364,400,430,476,
+  113                                          2,36,82,112,148,184,220,288,};
+  114          u8 code motor_pwm2[48]={0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+  115                                                                             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+  116                                                                             0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+  117                                                                             0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+  118                                                                             0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+  119                                                                             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,};
+  120          
+  121          u8 code motor_pwm3[48]={0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+  122                                                                             0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+  123                                                                             0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+  124                                                                             0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 3   
+
+  125                                                                             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+  126                                                                             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,};
+  127          
+  128          u16 motor_pwm4[48] = {
+  129                                          354,286,220,184,148,112,82,36,//1
+  130                                          512,476,430,400,364,328,292,226,//2
+  131                                          158,138,118,112,102,112,118,138,//3
+  132                                          158,226,292,328,364,400,430,476,//4
+  133                                          2,36,82,112,148,184,220,288,//5
+  134                                          354,374,394,400,410,400,394,374,//6
+  135                                          };
+  136          
+  137          void delay_ms(u16 ms);
+  138          void Delay150us();
+  139          void Delay10us();               
+  140          void init_stepmotor(void);
+  141                                          
+  142          void CheckBusy(void)
+  143          {
+  144   1              u16     i;
+  145   1              for(i=0; i<5000; i++)   
+  146   1              {
+  147   2                      if(!LCD_B7)     
+  148   2                              {
+  149   3                              //P35=1;
+  150   3                              break;
+  151   3                              }
+  152   2                      else
+  153   2                              P35=0;
+  154   2              }               //check the LCD busy or not. With time out
+  155   1      //      while(LCD_B7);                  //check the LCD busy or not. Without time out
+  156   1      }
+  157                  
+  158          void LcdIntWriteCom(u8 com)//不检查忙
+  159          {
+  160   1              u8 com1,com2;
+  161   1              com1=com&0xf0;
+  162   1              com2=(com<<4)&0xf0;
+  163   1              E=0;
+  164   1              RW=0;
+  165   1              RS=0;
+  166   1              DB07=com1;
+  167   1              Delay10us();
+  168   1              
+  169   1              E=1;
+  170   1              Delay150us();
+  171   1              E=0;
+  172   1              
+  173   1              RW=0;
+  174   1              RS=0;
+  175   1              DB07=com2;
+  176   1              Delay10us();
+  177   1              
+  178   1              E=1;
+  179   1              Delay150us();
+  180   1              E=0;
+  181   1              
+  182   1              DB07=0xff;
+  183   1      }
+  184          
+  185          void LcdWriteCom(u8 com)//检查忙
+  186          {
+  187   1              u8 com1,com2;
+  188   1              RS = 0;
+  189   1              RW = 1;
+  190   1              DB07=0xff;
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 4   
+
+  191   1              Delay150us();
+  192   1              E = 1;
+  193   1              CheckBusy();                    //check the LCD busy or not.
+  194   1              E = 0;
+  195   1      
+  196   1              com1=com&0xf0;
+  197   1              com2=(com<<4)&0xf0;
+  198   1              E=0;
+  199   1              RW=0;
+  200   1              RS=0;
+  201   1              DB07=com1;
+  202   1              Delay10us();
+  203   1              
+  204   1              E=1;
+  205   1              Delay150us();
+  206   1              E=0;
+  207   1              
+  208   1              RW=0;
+  209   1              RS=0;
+  210   1              DB07=com2;
+  211   1              Delay10us();
+  212   1              
+  213   1              E=1;
+  214   1              Delay150us();
+  215   1              E=0;
+  216   1              
+  217   1              DB07=0xff;
+  218   1      }
+  219          
+  220          void LcdWriteData(u8 dat)//检查忙
+  221          {
+  222   1              u8 dat1,dat2;
+  223   1              
+  224   1              RS = 0;
+  225   1              RW = 1;
+  226   1              DB07=0xff;
+  227   1              Delay150us();
+  228   1              E = 1;
+  229   1              CheckBusy();                    //check the LCD busy or not.
+  230   1              E = 0;
+  231   1              
+  232   1              dat1=dat&0xf0;
+  233   1              dat2=(dat<<4)&0xf0;
+  234   1              E=0;
+  235   1              RW=0;
+  236   1              RS=1;
+  237   1              DB07=dat1;
+  238   1              Delay10us();
+  239   1              
+  240   1              E=1;
+  241   1              Delay150us();
+  242   1              E=0;
+  243   1              
+  244   1              RW=0;
+  245   1              RS=1;
+  246   1              DB07=dat2;
+  247   1              Delay10us();
+  248   1              
+  249   1              E=1;
+  250   1              Delay150us();
+  251   1              E=0;
+  252   1              
+  253   1              DB07=0xff;
+  254   1      }
+  255          
+  256          void LcdInit()
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 5   
+
+  257          {
+  258   1      
+  259   1              delay_ms(100);
+  260   1              LcdIntWriteCom(0x20);//功能设置，四位接线
+  261   1              delay_ms(10);
+  262   1              LcdIntWriteCom(0x20);//功能设置，四位接线
+  263   1              delay_ms(6);
+  264   1              LcdWriteCom(0x28);//功能设置，四位接线且两行显示
+  265   1              delay_ms(6);
+  266   1      //      LcdWriteCom(0x08);  // 关闭显示器
+  267   1              LcdWriteCom(0x01);//清除
+  268   1              delay_ms(5);
+  269   1              LcdWriteCom(0x06);//写一个指针加1
+  270   1              delay_ms(5);
+  271   1              LcdWriteCom(0x0C);//显示开，不显示光标
+  272   1              delay_ms(5);
+  273   1              
+  274   1      
+  275   1              
+  276   1              delay_ms(50);
+  277   1      }
+  278          
+  279          void Show_string1(u8 *a)
+  280          {
+  281   1              u8 i;
+  282   1              LcdWriteCom(0x80);
+  283   1              for(i=0;a[i]!='\0';i++)
+  284   1              //for(i=0;i<8;i++)
+  285   1              {
+  286   2                      LcdWriteData(a[i]);
+  287   2              }
+  288   1      }
+  289          
+  290          void Show_string2(u8 *a)
+  291          {
+  292   1              u8 i;
+  293   1              LcdWriteCom(0xc0);
+  294   1              for(i=0;i<8;i++)
+  295   1              {
+  296   2                      LcdWriteData(a[i]);
+  297   2              }
+  298   1      }
+  299          
+  300          
+  301          void main() 
+  302          { 
+  303   1              u8 i,j;
+  304   1      
+  305   1              EAXFR = 1; 
+  306   1              //使能访问 XFR 
+  307   1              CKCON = 0x00; //设置外部数据总线速度为最快 
+  308   1              WTST = 0x00;
+  309   1              //设置程序代码等待参数， 
+  310   1              //赋值为 0 可将 CPU 执行程序的速度设置为最快 
+  311   1              
+  312   1              //  Timer0初始化
+  313   1          AUXR = 0x80;    //Timer0 set as 1T, 16 bits timer auto-reload, 
+  314   1          TH0 = (u8)(Timer0_Reload / 256);
+  315   1          TL0 = (u8)(Timer0_Reload % 256);
+  316   1              ET0 = 1;    //Timer0 interrupt enable
+  317   1              TR0 = 1;    //Tiner0 run
+  318   1          
+  319   1              
+  320   1              
+  321   1              P0M0 = 0x00; P0M1 = 0x00; 
+  322   1              P1M0 = 0x00; P1M1 = 0x00; 
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 6   
+
+  323   1              P2M0 = 0x03; P2M1 = 0x00; //2.4567双向口  2.0 2.1推挽输出
+  324   1              P3M0 = 0x20; P3M1 = 0x00; //3.5 led
+  325   1              P4M0 = 0x18; P4M1 = 0x00; //p4.3,p4.4推挽输出
+  326   1              P5M0 = 0x00; P5M1 = 0x00; 
+  327   1              P6M0 = 0xff; P6M1 = 0x00;   
+  328   1              P7M0 = 0x70; P7M1 = 0x00;   
+  329   1              PWMA_CCER1 = 0x00; //写 CCMRx 前必须先清零 CCERx 关闭通道 
+  330   1              PWMA_CCER2 = 0x00; //写 CCMRx 前必须先清零 CCERx 关闭通道
+  331   1              PWMB_CCER1 = 0x00; //写 CCMRx 前必须先清零 CCxE 关闭通道
+  332   1          PWMB_CCER2 = 0x00;
+  333   1              
+  334   1              PWMA_CCMR1 = 0x60; //设置 CC1 为 PWMA 输出模式 
+  335   1              PWMA_CCMR2 = 0x60; //设置 CC1 为 PWMA 输出模式 
+  336   1              PWMA_CCMR3 = 0x60;
+  337   1          PWMA_CCMR4 = 0x60;
+  338   1              PWMB_CCMR1 = 0x60; //通道模式配置
+  339   1          PWMB_CCMR2 = 0x60;
+  340   1          PWMB_CCMR3 = 0x60;
+  341   1          PWMB_CCMR4 = 0x60;
+  342   1              
+  343   1              PWMA_CCER1 = 0x55; //使能 CC1，2,3 通道 ，允许输入，下降沿   //0x01 使能cc1输出，高电平为有效电平    0x0
+             -3 使能cc1输出，低电平为有效电平
+  344   1              PWMA_CCER2 = 0x55; //使能 CC2 通道 
+  345   1              PWMB_CCER1 = 0x55; //配置通道输出使能和极性
+  346   1          PWMB_CCER2 = 0x55;
+  347   1              
+  348   1              PWMA_CCR1H = 0x00;//设置占空比时间 
+  349   1              PWMA_CCR1L = 0xAA; 
+  350   1              PWMA_CCR2H = 0x00;//设置占空比时间 
+  351   1              PWMA_CCR2L = 0xAA; 
+  352   1              PWMA_CCR3H = 0x00;//设置占空比时间 
+  353   1              PWMA_CCR3L = 0xAA; 
+  354   1              PWMA_CCR4H = 0x00;//设置占空比时间 
+  355   1              PWMA_CCR4L = 0xAA; 
+  356   1              PWMB_CCR5H = 0x00;//设置占空比时间 
+  357   1              PWMB_CCR5L = 0xAA; 
+  358   1              PWMB_CCR6H = 0x00;//设置占空比时间 
+  359   1              PWMB_CCR6L = 0xAA; 
+  360   1              
+  361   1              PWMA_ARRH = 0x02; //设置周期时间 
+  362   1              PWMA_ARRL = 0x00; 
+  363   1              PWMB_ARRH = 0x02; //设置周期时间 
+  364   1          PWMB_ARRL = 0x00; 
+  365   1              
+  366   1      //      PWMA_ENO = 0x01; //使能 PWM1P 端口输出 
+  367   1              PWMA_ENO = 0x00; 
+  368   1              PWMB_ENO = 0x00; 
+  369   1              PWMA_ENO |= ENO1P; //使能输出 
+  370   1              PWMA_ENO |= ENO2P; //使能输出
+  371   1              PWMA_ENO |= ENO3P; //使能输出 
+  372   1              PWMA_ENO |= ENO4P; //使能输出
+  373   1              PWMB_ENO |= ENO5P; //使能输出
+  374   1          PWMB_ENO |= ENO6P; //使能输出
+  375   1              
+  376   1               PWMA_PS = 0x00; //高级 PWM 通道输出脚选择位 
+  377   1               PWMA_PS |= PWM1_3; //选择 PWM1-3 通道  p6.0
+  378   1               PWMA_PS |= PWM2_3; //选择 PWM2-3 通道  p6.2
+  379   1               PWMA_PS |= PWM3_3; //选择 PWM3-3 通道  p6.4
+  380   1               PWMA_PS |= PWM4_3; //选择 PWM4-3 通道  p6.6
+  381   1               PWMB_PS |= PWM5_1; //选择 PWM5_1 通道  p2.0
+  382   1           PWMB_PS |= PWM6_1; //选择 PWM6_1 通道  p2.1
+  383   1               
+  384   1              PWMA_BKR = 0x80; //使能主输出 
+  385   1              PWMA_CR1 = 0x01; //开始计时 
+  386   1              PWMB_BKR = 0x80;   //使能主输出
+  387   1          PWMB_CR1 |= 0x01;  //开始计时
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 7   
+
+  388   1              
+  389   1              
+  390   1              EA = 1;     //打开总中断
+  391   1      
+  392   1              
+  393   1      //      PWMB_ENO |= ENO5P; //关闭输出
+  394   1      //    PWMB_ENO |= ENO6P; //关闭输出
+  395   1      //      P2M0 = 0xf3; P2M1 = 0x00; //2.4567  2.0 2.1推挽输出
+  396   1              init_stepmotor();
+  397   1      //      PWMB_ENO &= ENO5P; //使能输出
+  398   1      //    PWMB_ENO &= ENO6P; //使能输出
+  399   1      //      P2M0 = 0xf0; P2M1 = 0x03; //2.4567推挽输出  2.0 2.1高阻输入
+  400   1      
+  401   1              
+  402   1              
+  403   1      
+  404   1              delay_ms(1000);
+  405   1              LcdInit();
+  406   1              
+  407   1      //       LcdWriteCom(0x40);//设定CGRAM地址
+  408   1      //       for(i=0;i<16;i++)//把自定义字符存储到设定地址
+  409   1      
+  410   1      //        {
+  411   1      //         LcdWriteData(border_inf[i]);
+  412   1      //         }
+  413   1      
+  414   1              
+  415   1              while (1)
+  416   1              {
+  417   2              
+  418   2      //      LcdWriteCom(0x01);//清除显示    
+  419   2              delay_ms(1000); 
+  420   2              
+  421   2                      
+  422   2              Show_string1(hour);     
+  423   2              Show_string2(power);    
+  424   2              delay_ms(3000);
+  425   2                      
+  426   2              Show_string1(SPN);      
+  427   2              Show_string2(FMI);
+  428   2              delay_ms(1000); 
+  429   2              
+  430   2              }
+  431   1      }
+*** WARNING C47 IN LINE 303 OF PWM.c: 'i': unreferenced local variable
+*** WARNING C47 IN LINE 303 OF PWM.c: 'j': unreferenced local variable
+  432          
+  433          /********************** Timer0 1ms中断函数 ************************/
+  434          void timer0(void) interrupt 1
+  435          {
+  436   1      
+  437   1              if(count==0) count = 47;
+  438   1              PWMA_CCR1H = (u8)(motor_pwm1[count] >> 8);//设置占空比时间 
+  439   1              PWMA_CCR1L = (u8)(motor_pwm1[count]); 
+  440   1              fule_m2=(bit)motor_pwm2[count];
+  441   1              fule_m3=(bit)motor_pwm3[count];
+  442   1              PWMA_CCR2H = (u8)(motor_pwm4[count] >> 8);//设置占空比时间 
+  443   1              PWMA_CCR2L = (u8)(motor_pwm4[count]); 
+  444   1              
+  445   1              PWMA_CCR3H = (u8)(motor_pwm1[count] >> 8);//设置占空比时间 
+  446   1              PWMA_CCR3L = (u8)(motor_pwm1[count]); 
+  447   1              zs_m2=(bit)motor_pwm2[count];
+  448   1              zs_m3=(bit)motor_pwm3[count];
+  449   1              PWMA_CCR4H = (u8)(motor_pwm4[count] >> 8);//设置占空比时间 
+  450   1              PWMA_CCR4L = (u8)(motor_pwm4[count]); 
+  451   1              
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 8   
+
+  452   1              PWMB_CCR5H = (u8)(motor_pwm1[count] >> 8);//设置占空比时间 
+  453   1              PWMB_CCR5L = (u8)(motor_pwm1[count]); 
+  454   1              water_m2=(bit)motor_pwm2[count];
+  455   1              water_m3=(bit)motor_pwm3[count];
+  456   1              PWMB_CCR6H = (u8)(motor_pwm4[count] >> 8);//设置占空比时间 
+  457   1              PWMB_CCR6L = (u8)(motor_pwm4[count]); 
+  458   1      
+  459   1              count --;               
+  460   1      
+  461   1      }
+  462          
+  463          void init_stepmotor(void)
+  464          {
+  465   1              
+  466   1              unsigned int d,e;
+  467   1      
+  468   1              for(d=0;d<5760;d++)
+  469   1              {
+  470   2                      //------------------------------------------------
+  471   2                      if(a>47) a=0;
+  472   2                      
+  473   2                      PWMA_CCR1H = (u8)(motor_pwm1[a] >> 8);//设置占空比时间 
+  474   2                      PWMA_CCR1L = (u8)(motor_pwm1[a]); 
+  475   2                      fule_m2=(bit)motor_pwm2[a];
+  476   2                      fule_m3=(bit)motor_pwm3[a];
+  477   2                      PWMA_CCR2H = (u8)(motor_pwm4[a] >> 8);//设置占空比时间 
+  478   2                      PWMA_CCR2L = (u8)(motor_pwm4[a]); 
+  479   2                      
+  480   2                      PWMA_CCR3H = (u8)(motor_pwm1[a] >> 8);//设置占空比时间 
+  481   2                      PWMA_CCR3L = (u8)(motor_pwm1[a]); 
+  482   2                      zs_m2=(bit)motor_pwm2[a];
+  483   2                      zs_m3=(bit)motor_pwm3[a];
+  484   2                      PWMA_CCR4H = (u8)(motor_pwm4[a] >> 8);//设置占空比时间 
+  485   2                      PWMA_CCR4L = (u8)(motor_pwm4[a]); 
+  486   2                      
+  487   2                      PWMB_CCR5H = (u8)(motor_pwm1[a] >> 8);//设置占空比时间 
+  488   2                      PWMB_CCR5L = (u8)(motor_pwm1[a]); 
+  489   2                      water_m2=(bit)motor_pwm2[a];
+  490   2                      water_m3=(bit)motor_pwm3[a];
+  491   2                      PWMB_CCR6H = (u8)(motor_pwm4[a] >> 8);//设置占空比时间 
+  492   2                      PWMB_CCR6L = (u8)(motor_pwm4[a]); 
+  493   2                      a++;            
+  494   2                      Delay150us();
+  495   2      
+  496   2              }
+  497   1              
+  498   1              
+  499   1          
+  500   1      }
+*** WARNING C47 IN LINE 466 OF PWM.c: 'e': unreferenced local variable
+  501          
+  502          //========================================================================
+  503          // 函数: void delay_ms(u16 ms)
+  504          // 描述: 延时函数。
+  505          // 参数: ms,要延时的ms数, 这里只支持1~65535ms. 自动适应主时钟.
+  506          // 返回: none.
+  507          // 版本: VER1.0
+  508          // 日期: 2013-4-1
+  509          // 备注: 
+  510          //========================================================================
+  511          void delay_ms(u16 ms)
+  512          {
+  513   1           u16 i;
+  514   1           do{
+  515   2                i = MAIN_Fosc / 6000;
+  516   2                while(--i);
+C251 COMPILER V5.60.0,  PWM                                                                03/02/24  14:19:32  PAGE 9   
+
+  517   2           }while(--ms);
+  518   1      }               
+  519          void Delay150us()               //@12.000MHz
+  520          {
+  521   1              unsigned long edata i;
+  522   1      
+  523   1              _nop_();
+  524   1              _nop_();
+  525   1              _nop_();
+  526   1              i = 448UL;
+  527   1              while (i) i--;
+  528   1      }
+  529          
+  530          void Delay10us()                //@12.000MHz
+  531          {
+  532   1              unsigned long edata i;
+  533   1      
+  534   1              _nop_();
+  535   1              _nop_();
+  536   1              _nop_();
+  537   1              i = 28UL;
+  538   1              while (i) i--;
+  539   1      }
+  540          
+  541          
+  542          
+
+
+Module Information          Static   Overlayable
+------------------------------------------------
+  code size            =      1729     ------
+  ecode size           =    ------     ------
+  data size            =    ------     ------
+  idata size           =    ------     ------
+  pdata size           =    ------     ------
+  xdata size           =    ------     ------
+  xdata-const size     =    ------     ------
+  edata size           =       227          2
+  bit size             =    ------     ------
+  ebit size            =    ------     ------
+  bitaddressable size  =    ------     ------
+  ebitaddressable size =    ------     ------
+  far data size        =    ------     ------
+  huge data size       =    ------     ------
+  const size           =    ------     ------
+  hconst size          =       263     ------
+End of Module Information.
+
+
+C251 COMPILATION COMPLETE.  3 WARNING(S),  0 ERROR(S)
